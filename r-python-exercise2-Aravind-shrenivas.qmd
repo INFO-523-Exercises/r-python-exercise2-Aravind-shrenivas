@@ -1,0 +1,1178 @@
+---
+title: "Data Preprocessing in R"
+author: "Aravind shrenivas Murali"
+format: html
+editor: visual
+toc: true
+---
+
+## Installing required packages
+
+```{r}
+#checking and installing 'pacman'  package
+if(!require("pacman"))
+  install.packages("pacman") 
+```
+
+```{r}
+#Use 'p_load' from 'pacman' to install and load multiple packages in a single line
+library(pacman)
+
+p_load(DBI, #For working with Database Interface (DBI) databases
+       dlookr, #Provides tools for data quality assessment
+       here, #Helps set reproducible and standard project directories
+       janitor,#Simplifies data cleaning and tidying
+       RMySQL, #Utilizes MySQL drivers for connecting to MySQL databases
+       tidymodels, #Implements tidyverse-style modeling (e.g., lm()) for machine learning
+       tidyverse, #A collection of packages for data wrangling, manipulation, and visualization
+       qqplotr,#Generates quantile-quantile (QQ) plots
+       tidyr) #Part of the tidyverse, for data tidying and reshaping
+```
+
+## Loading data
+
+### CSV files `(.csv)`
+
+```{r}
+#Read_csv is used to read the csv file
+data <- read_csv(here("data", "x.csv"))
+
+#The data is then fed to glimpse() function
+data |> glimpse()
+```
+
+### Tab separated values `(.tsv)`
+
+```{r}
+#read_delim is used to read demilited files here x.tsv file
+data <- read_delim(here("data", "x.tsv"))
+
+#The data is then fed to glimpse() function
+data |> glimpse()
+```
+
+### Importing data from MySQL database
+
+First of all, I will establish a connection to a MySql database, to fetch the data later on.
+
+```{r}
+# Create a MySQL database connection driver
+drv <- dbDriver("MySQL") 
+```
+
+#### Using `dplyr` instead
+
+```{r}
+#checking and installing 'dbplyr'  package
+if(!require("dbplyr"))
+  install.packages("dbplyr") 
+```
+
+#### Obtain a connection
+
+```{r, eval=FALSE}
+#'con' is a variable that will store the connection information to the MySQL database
+con <- src_mysql(
+  "etcsite_charaparser", #Name of the MySQL database (replace with your actual database name).
+  user = "termsuser", #Username for accessing the database.
+  password = "termspassword",#Password for the specified user.
+  host = "localhost" #Hostname or IP address of the MySQL server.
+)
+```
+
+```{r, eval=FALSE}
+#Printing the allwords table from the MySQL database
+allwords <- tbl(con, "1_allwords")
+allwords
+```
+
+I am not able to establish a connection to the database mentioned above, but I understood the code to connect to the db and fetch data.
+
+## Data cleaning
+
+### Wide vs long format
+
+```{r}
+# Reading the text file wide.txt
+wide <- read_delim(
+  here("data", "wide.txt"),  # Assuming the data file is in a 'data' subdirectory
+  delim = " ",               # Delimiter is a space
+  skip = 1,                  # Skip the first row 
+  col_names = c("Name", "Math", "English", "Degree_Year")  # Provide column names
+)
+
+# Printing the wide dataframe
+wide
+```
+
+The wide format uses the subjects such as Math and English as variables.
+
+```{r}
+# Using pivot_longer to transform from wide to long format
+long <- wide |>
+  pivot_longer(cols = c(Math, English),  # Specifying columns to pivot
+                 names_to = "Subject",      # Creating a new column 'Subject' for the original column names
+                 values_to = "Grade")       # Creating a new column 'Grade' for the values in the pivoted columns
+
+# Printing the long variable
+long
+```
+
+The long format uses name, subject, grade as variables.
+
+### Long to wide, use `spread()`
+
+```{r}
+wide <- long %>%
+  # Using pivot_wider to reshape the data from long to wide
+  pivot_wider(names_from = Subject, values_from = Grade)
+
+# Print wide variable
+wide
+```
+
+### Split a column into multiple columns
+
+```{r}
+clean <- long %>%
+  # Separate() function used to separate into multiple columns
+  separate(Degree_Year, c("Degree", "Year"), sep = "_")
+
+# Print clean variable
+clean
+```
+
+### Handling date/time and time zones
+
+```{r}
+#checking and installing 'lubridate'  package
+if(!require("lubridate"))
+  install.packages("lubridate") 
+
+# Loading it to the current workspace
+library(lubridate)
+```
+
+We will convert various format dates into a single format
+
+```{r}
+# Mixed dates contains many dates of different format
+mixed.dates <- c(20140123, "2019-12-12", "2009/5/1",
+ "measured on 2002-12-06", "2018-7/16")
+
+clean.dates <- ymd(mixed.dates) #convert to year-month-day format
+
+# Printing the same format dates
+clean.dates
+```
+
+Now, I will extract day, week, month and year fron the dates
+
+```{r}
+# Using dates from the variable clean.dates variable to extract the information
+data.frame(Dates = clean.dates, WeekDay = wday(clean.dates), nWeekDay = wday(clean.dates, label = TRUE), Year = year(clean.dates), Month = month(clean.dates, label = TRUE))
+```
+
+```{r}
+# Defining a time zone
+date.time <- ymd_hms("20190203 03:00:03", tz="Asia/Shanghai")
+```
+
+```{r}
+# Converting to AZ time
+with_tz(date.time, tz="America/Phoenix")
+```
+
+```{r}
+# Changing the timezone to Turkey
+force_tz(date.time, "Turkey")
+```
+
+```{r}
+# To see all the available time zones
+OlsonNames()
+```
+
+### String Processing
+
+```{r}
+# Loading the required packages into workspace
+library(dplyr)
+library(stringr)
+library(readr)
+```
+
+Getting data from a database URL using string processing functions
+
+```{r}
+# Online Repository URL
+uci.repo <-"http://archive.ics.uci.edu/ml/machine-learning-databases/"
+
+# Selecting specific dataset from repo
+dataset <- "audiology/audiology.standardized"
+```
+
+```{r}
+# Concatenate the directory path (uci.repo), dataset name, and file extension to create the data file path
+dataF <- str_c(uci.repo, dataset, ".data")
+
+# Concatenate the directory path (uci.repo), dataset name, and file extension to create the names file path
+namesF <- str_c(uci.repo, dataset, ".names")
+
+# Print dataF path
+dataF
+```
+
+```{r}
+# Reading the dataF using read_csv function
+data <- read_csv(url(dataF), col_names = FALSE, na="?")
+```
+
+```{r}
+# checking for the dimension of the DF
+dim(data)
+```
+
+```{r}
+# Read lines from a URL into the 'lines' variable
+lines <- read_lines(url(namesF))
+
+# This function returns the first few lines of the dataset
+lines |> head()
+```
+
+Examine the content of lines and see the column names start on line 67, ends on line 135. Then, get column name lines and clean up to get column names:
+
+```{r}
+# Reading the content from lines 67 to 135
+names <- lines[67:135]
+names
+```
+
+```{r}
+names <- str_split_fixed(names, ":", 2) #split on regular expression pattern ":", this function returns a matrix
+names
+```
+
+```{r}
+# Selecting the first column
+names <- names[,1]
+names
+```
+
+```{r}
+# Using str_trim to remove () from names to clean the data
+names <-str_trim(names) |> str_replace_all("\\(|\\)", "") # we use a pipe, and another reg exp "\\(|\\)", \\ is the escape.
+names
+```
+
+```{r}
+# Putting 69 names into 69 columns
+colnames(data)[1:69] <- names
+data
+```
+
+```{r}
+# Renaming last two columns
+colnames(data)[70:71] <- c("id", "class")
+data
+```
+
+### Dealing with unknown values
+
+```{r}
+# Loading the package dplyr to the workspace
+library(dplyr)
+
+# Removing observations or columns with NA
+missing.value.rows <- data |>
+  filter(!complete.cases(data))
+missing.value.rows
+```
+
+```{r}
+# Add a new column 'na_count' to the 'data' dataframe
+data <- data %>%
+  # Use rowSums and is.na to count the number of NA values in each row
+  mutate(na_count = rowSums(is.na(data)))
+
+# Display the modified 'data' dataframe with the new 'na_count' column
+data
+```
+
+```{r}
+# Summarize: Count the number of NA values for each column
+data |>
+  summarize(across(everything(), ~sum(is.na(.)), .names = "na_{.col}")) |>
+
+# Pivot Longer: Reshape the data from wide to long format
+  pivot_longer(everything(), names_to = "column_name", values_to = "na_count") |>
+
+# Arrange: Sort the data by the count of NA values
+  arrange(na_count)
+```
+
+`bser` variable has 196 NAs. If this variable is considered not useful, we can remove it from the data.
+
+```{r}
+# Remove the 8th column from the dataset
+data.bser.removed <- data %>%
+  select(-8) %>%
+  
+# Summarize the dataset: count the number of NA values in each column
+  summarise(across(everything(), ~sum(is.na(.)), .names = "na_{.col}"))
+
+# View the resulting dataset with NA counts
+data.bser.removed
+
+```
+
+```{r}
+# Selecting the bser variable
+data <- data %>%
+  select(-matches("bser"))
+```
+
+#### Mistaken characters
+
+R takes all the elements into account and determines the type of vector. In the code below, we have a missing element, so R considers the vector as character. `parse_integer` can be used to solve this problem.
+
+```{r}
+# Creating a vector with numeric and character elements
+mistaken <- c(2, 3, 4, "?")
+
+# Checking the class of the vector
+class(mistaken)
+
+```
+
+```{r}
+# Using parse_integer to convert 'mistaken' to integers
+fixed <- parse_integer(mistaken, na = '?')
+
+# Print fixed variable
+fixed
+```
+
+```{r}
+# Checking the class of the vector
+class(fixed)
+```
+
+#### Filling unknowns with most frequent values
+
+```{r}
+# Install DMwR2 package
+if(!require("DMwR2"))
+  install.packages("DMwR2")
+
+# Load the library to the workspace
+library(DMwR2)
+
+# Load the algae dataset from the DMwR2 package
+data(algae, package = "DMwR2")
+
+# Display the 48th row of the algae dataset
+algae[48,]
+```
+
+```{r}
+# plot a QQ plot of mxPH
+# Install car package
+if(!require("car"))
+  install.packages("car")
+
+# Load the library to the workspace
+library(car)
+
+# Create a QQ plot for the 'mxPH' variable in the 'algae' dataset
+ggplot(algae, aes(sample = mxPH)) +
+
+# Add a shaded region
+geom_qq_band() +
+
+# Add points representing the quantiles of 'mxPH'
+stat_qq_point() +
+
+# Add a reference line to help assess normality, in red
+stat_qq_line(color = "red", method = "identity", intercept = -2, slope = 1) +  
+
+# Title of the plot
+ggtitle("Normal QQ plot of mxPH") 
+```
+
+The straight line fits the data pretty well so mxPH is normal, so I will use mean to fill the unknown.
+
+```{r}
+# Selecting algae dataset
+algae <- algae |>
+  # Add a new column 'mxPH'
+  mutate(mxPH = ifelse(row_number() == 48, mean(mxPH, na.rm = TRUE), mxPH))
+
+# Printing algae
+algae
+```
+
+```{r}
+# Create a QQ plot of the 'Chla' variable in the 'algae' dataset
+ggplot(algae, aes(sample = Chla)) +
+  
+  # Add a shaded band to represent the confidence interval around the quantiles
+  geom_qq_band() +
+  
+  # Add points on the plot representing the quantiles of 'Chla'
+  stat_qq_point() +
+  
+  # Add a reference line to the plot (red line with identity method, y=x)
+  stat_qq_line(color = "red", method = "identity", intercept = -2, slope = 1) +  
+  
+  # Set the title of the plot
+  ggtitle("Normal QQ plot of Chla")
+
+```
+
+```{r}
+# finding median
+median(algae$Chla, na.rm = TRUE)
+```
+
+```{r}
+# finding mean
+mean(algae$Chla, na.rm = TRUE)
+```
+
+```{r}
+# We are using median to fill up all the missing values
+algae <- algae |>
+  mutate(Chla = if_else(is.na(Chla), median(Chla, na.rm = TRUE), Chla))
+```
+
+#### Filling unknowns using linear regression
+
+We can use this method if two variables are highly correlated. So I will use one variable A to predict the other variable using linear regression.
+
+```{r}
+# Selecting rows from 4 to 18 in algae dataset
+algae_numeric <- algae[, 4:18] %>%
+  drop_na()  # Removes rows with NA values
+
+# Passing the rows to correlate function and plotting it
+cor_matrix <- algae_numeric |> correlate() |> plot()
+```
+
+```{r}
+# Printing correlation matrix
+cor_matrix
+```
+
+We can see the correlation beytween the variables PO4 and oPO4 is high. So, we will now create a linear regression to fill up missing values.
+
+```{r}
+algae <- algae %>%
+  filter(rowSums(is.na(.)) / ncol(.) < 0.2)#this is a method provided that selects the observations with 20% or move values as NAs. 
+
+# Create a linear model (lm) where PO4 is predicted by oPO4 in the dataset algae
+m = lm(PO4 ~ oPO4, data = algae)
+lm(formula = PO4 ~ oPO4, data = algae)
+```
+
+```{r}
+# Summary of linear model
+m |> 
+  summary()
+```
+
+```{r}
+# Making it more readable using tody() function
+m |> 
+  summary() |> 
+  tidy()
+```
+
+If the model is good, the coefficients should all be significant, and the adjusted R-squared should be near to 1.
+
+The p-value for F-statistics should be smaller than the significant level (usually 0.05).
+
+R-squared estimates the strength of the association between your model and the response variable, but it does not give a formal hypothesis test for this relationship.
+
+The overall significance F-test assesses whether or not this association is statistically significant.
+
+This model is excellent. We can also evaluate the model's fitness using fitted line plots (which should indicate a good fit) and residual plots (which should reveal random residuals).
+
+PO4 = 1.3\*oPO4 + 42.9 is the lm.
+
+```{r}
+# access PO4 column from dataset algae
+algae$PO4
+```
+
+```{r}
+# Update the 'PO4' column for a specific row 28
+algae <- algae %>%
+  mutate(PO4 = ifelse(row_number() == 28, 42.897 + 1.293 * oPO4, PO4))
+```
+
+```{r}
+# Calculate residuals from a model 'm'
+res = resid(m)
+
+# Extract 'oPO4' values excluding the row with row_number() == 28
+oPO4_reduced <- algae %>%
+  filter(row_number() != 28) %>%
+  pull(oPO4)
+```
+
+```{r}
+# Create a residual plot using ggplot
+ggplot(data = data.frame(oPO4 = m$model$oPO4, res = res), aes(x = oPO4, y = res)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    x = "oPO4",
+    y = "residuals",
+    title = "Residual Plot"
+  )
+```
+
+\
+If there are more PO4 cells to fill, we can use `sapply()` to apply this transformation to a set of values
+
+```{r}
+# Creating a function to fill up missing values
+fillPO4 <- function(x) {
+  if_else(is.na(x), 42.897 + 1.293 * x, x)
+}
+#if x is not NA, return 42.897+1.293*x 
+```
+
+```{r}
+# Calling the unction to fill up values
+algae[is.na(algae$PO4), "PO4"] <- sapply(algae[is.na(algae$PO4), "oPO4"], fillPO4)
+```
+
+Similarly, we can apply this method to fill up values in any of the other variables
+
+#### Filling unknowns by exploring similarities among cases
+
+```{r}
+# Selecting the algae dataset
+data(algae, package="DMwR2")
+
+# Remove rows with many missing values from the 'algae' dataset
+algae <- algae[-manyNAs(algae), ] 
+```
+
+knnImputation() is a method in DM2R2. The Euclidean distance is used to find the 10 most comparable examples of each sample with some unknown value in a variable, and then their values are used to fill in the unknown.
+
+To fill in the gaps, we may simply take the median of the values of the ten nearest neighbours. We would choose the most frequent value (the mode) among the neighbours in the case of unknown nominal variables . The second method takes a weighted average of the point values.
+
+The weights drop as the distance between the data points cases grows.
+
+```{r}
+algae <- knnImputation(algae, k = 10) #use the weighted average of k most similar samples
+
+
+data(algae, package="DMwR2") #get data again so there are unknown values
+algae <- algae[-manyNAs(algae), ] 
+algae <- knnImputation(algae, k = 10, meth="median") #use the median of k most similar samples
+```
+
+```{r}
+getAnywhere(knnImputation())
+```
+
+### Scaling and normalization
+
+Normalizing value `x` : y=(x-mean)/std deviation(x)
+
+```{r}
+#checking and installing 'palmerpenguins'  package
+if(!require("palmerpenguins"))
+  install.packages("palmerpenguins") 
+
+# Loading the packages dplyr and palmerpenguins to working directory
+library(dplyr)
+library(palmerpenguins)
+```
+
+```{r}
+data(penguins)
+```
+
+```{r}
+# select only numeric columns
+penguins_numeric <- select(penguins, bill_length_mm, bill_depth_mm, flipper_length_mm, body_mass_g)
+
+# normalize numeric columns
+penguins_norm <- scale(penguins_numeric)
+
+# convert back to data frame and add species column
+peng.norm <- cbind(as.data.frame(penguins_norm), species = penguins$species)
+
+# because scale() takes numeric matrix as input, we first remove Species column, then use cbind() to add the column back after normalization.
+```
+
+```{r}
+summary(penguins)
+```
+
+```{r}
+summary(peng.norm)
+```
+
+Normalizing can be done by `scale()` function in R. This function can also consider some other ways to normalize the data.
+
+```{r}
+# Calculate the maximum values for each column excluding the 'species' column
+max <- apply(select(penguins, -species), 2, max, na.rm=TRUE)
+
+# Calculate the minimum values for each column excluding the 'species' column
+min <- apply(select(penguins, -species), 2, min, na.rm=TRUE)
+```
+
+```{r}
+max
+```
+
+```{r}
+min
+```
+
+```{r}
+# min-max normalization
+# Scale numeric columns in the penguins_numeric dataset
+penguin_scaled <- as.data.frame(lapply(penguins_numeric, function(x) (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))))
+
+# Combine the scaled numeric columns with the 'species' column from the original penguins dataset
+penguin_scaled <- cbind(penguins_norm, species = penguins$species)
+
+# Display a summary of the scaled and combined dataset
+summary(penguin_scaled)
+
+```
+
+#### Discretizing variables (binning)
+
+It is the process of transferring continuous functions, models, variables, and equations into discrete counterparts
+
+Use `dlookr`\'s `binning(type = "equal")` for equal-length cuts (bins)
+
+Use `Hmisc`\'s `cut2()` for equal-depth cuts
+
+```{r}
+# Using the Boston housing data
+data(Boston, package="MASS")
+summary(Boston$age)
+```
+
+```{r}
+Boston$newAge <- dlookr::binning(Boston$age, 5, type = "equal") #create 5 bins and add new column newAge to Boston
+summary(Boston$newAge)
+```
+
+```{r}
+Boston$newAge <- dlookr::binning(Boston$age, nbins = 5, labels = c("very-young", "young", "mid", "older", "very-old"), type = "equal") #add labels
+
+summary(Boston$newAge)
+```
+
+##### Equal-depth
+
+```{r}
+#checking and installing 'Hmisc'  package
+if(!require("Hmisc"))
+  install.packages("Hmisc") 
+
+# Loading the Hmisc package to the library
+library(Hmisc)
+Boston$newAge <- cut2(Boston$age, g = 5) #create 5 equal-depth bins and add new column newAge to Boston
+
+# Count the occurrences of each unique value in the 'newAge' column of the 'Boston' dataset
+table(Boston$newAge)
+```
+
+##### Assign labels
+
+```{r}
+Boston$newAge <- factor(cut2(Boston$age, g = 5), labels = c("very-young", "young", "mid", "older", "very-old"))
+
+# Count the occurrences of each unique value in the 'newAge' column of the 'Boston' dataset
+table(Boston$newAge)
+```
+
+```{r}
+# Plotting a histogram
+hist(Boston$age, breaks = seq(0, 101,by = 10)) #seq() gives the function for breaks. The age ranges from 0 – 101.
+```
+
+```{r}
+# Load the library
+library(ggplot2)
+
+# Plotting using ggplot
+Boston |>
+  ggplot(aes(x = age)) +
+  geom_histogram(binwidth = 10)
+```
+
+### Decimal scaling
+
+```{r}
+# Creating a vector
+data <- c(10, 20, 30, 50, 100)
+```
+
+```{r}
+(nDigits = nchar(max(abs(data)))) #nchar counts the number of characters
+```
+
+```{r}
+# Scaling the vector
+(decimalScale = data / (10^nDigits))
+```
+
+##### Smoothing by bin mean
+
+```{r}
+# Creating a dataset
+age = c(13, 15, 16, 16, 19, 20, 20, 21, 22, 22, 25, 25, 25, 25, 30)
+
+# Separate data into bins of depth 3
+(bins = matrix(age, nrow = length(age) / 5, byrow = TRUE))
+```
+
+```{r}
+# Finding avg of each bin
+(bin_means = apply(bins, 1, FUN = mean))
+```
+
+```{r}
+# Using the mean values to replace the values to smooth
+for (i in 1:nrow(bins)) {
+   bins[i,] = bin_means[i]
+ }
+bins
+```
+
+```{r}
+# printing the output
+(age_bin_mean_smoothed = round(as.vector(t(bins)), 2))
+```
+
+## Variable correlations and dimensionality reduction
+
+### Chi-squared test
+
+```{r}
+# Create a 2x2 matrix representing the observed frequencies for a chi-squared test
+racetable = rbind(c(151,9), c(63,103))
+
+# Perform a chi-squared test on the observed frequencies
+test1 = chisq.test(racetable, correct=F)
+
+# Display the results
+test1
+```
+
+### Loglinear model
+
+It is the extended version of chi-squared test to more than 2 categorical variables. Loglinear models model cell counts in contingency tables.
+
+```{r}
+# Creating a 4-dimensional array named 'seniors'
+seniors <- array(
+  data = c(911, 44, 538, 456, 3, 2, 43, 279, 911, 44, 538, 456, 3, 2, 43, 279),
+  dim = c(2, 2, 2, 2),  # Dimensions of the array
+  dimnames = list(
+    "cigarette" = c("yes", "no"),        # Levels for the 'cigarette' dimension
+    "marijuana" = c("yes", "no"),        # Levels for the 'marijuana' dimension
+    "alcohol" = c("yes", "no"),           # Levels for the 'alcohol' dimension
+    "age" = c("younger", "older")         # Levels for the 'age' dimension
+  )
+)
+
+```
+
+```{r}
+# Observing the data
+seniors
+```
+
+Now we will perform loglinear model to the data. First we need to convert the data to table and then to data frame.
+
+```{r}
+# Converting into a table
+seniors.tb <- as.table(seniors)
+seniors.tb
+```
+
+```{r}
+# Converting into a data frame
+seniors.df <- as.data.frame(seniors.tb)
+seniors.df
+```
+
+Poisson distribution: a discrete probability distribution that expresses the likelihood of a specific number of events occurring in a fixed region of time or space at a known constant rate and regardless of the time since the last event.
+
+Now, we will use glm function to compute our loglinear model
+
+```{r}
+# Poisson regression model using glm
+mod.S4 <- glm(Freq ~ (cigarette * marijuana * alcohol * age), data = seniors.df, family=poisson)
+
+# Displaying the outcomes
+summary(mod.S4)
+```
+
+"Residual deviance" indicates the model's fit to the data. A good fit would have residual deviation equal to or less than the degree of freedom. As expected, this is the case for the saturated model.
+
+Then examine "Coefficients" (the lamdas). Many of them are not statistically significant (*, **,*** denotes significant lamdas).
+
+Examining those negligible effects reveals that they are all related to age.
+
+Remove age from the equation and re-generate a model using the remaining three variables.
+
+```{r}
+# Removing age and regenarating the model
+mod.S3 <- glm(Freq ~ (cigarette * marijuana * alcohol), data = seniors.df, family = poisson)
+summary(mod.S3)
+```
+
+We can see that the model fits well. So for data modeling, we can remove the 3-way interaction by testing \"`Freq ~ (cigarette + marijuana + alcohol)^2`\" (`^2` tells glm to check only two way interactions).
+
+```{r}
+# Testing the 2 way interaction
+mod.3 <- glm(Freq ~ (cigarette + marijuana + alcohol)^2, data = seniors.df, family = poisson)
+summary(mod.3)
+```
+
+```{r}
+# comparing the results with observed models
+cbind(mod.3$data, fitted(mod.3))
+```
+
+### Correlations
+
+```{r}
+# Loading the package tidyr in the workspace
+library(tidyr) # data manipulation
+
+# Dropping missing values and passing the resultant values to correlate function
+penguins_numeric |> 
+  drop_na() |>
+  correlate()
+```
+
+`bill_length_mm` and `flipper_length_mm` are highly negatively correlated, `body_mass_g` and `flipper_length_mm` are strongly positively correlated
+
+### Principal components analysis (PCA)
+
+```{r}
+# Create a new dataset 'pca.data' from 'penguins', removing rows with missing values
+pca.data <- penguins |> drop_na() |>
+  # Exclude columns 'species', 'island', and 'sex' from 'pca.data'
+  select(-species, -island, -sex)
+
+# Perform Principal Component Analysis (PCA) on 'pca.data'
+pca <- princomp(pca.data)
+
+# Display the loadings from the PCA
+loadings(pca)
+```
+
+```{r}
+head(pca$scores) # pca result is a list, and the component scores are elements in the list
+```
+
+Component scores are computed based on the loading, for example:
+
+``` comp3 = 0.941*bill_length_mm + 0.144*``bill_depth_mm``- 0.309*flipper_length_mm ```
+
+```{r}
+# Remove rows with missing values in the penguins dataset
+penguins_na <- penguins |> 
+  drop_na()
+
+# Create a new dataframe 'peng.reduced' with the first three principal components and include the 'Species' column from the cleaned penguins dataset
+peng.reduced <- data.frame(pca$scores[, 1:3], Species = penguins_na$species)
+
+# Display the first few rows of the reduced dataset
+head(peng.reduced)
+```
+
+```{r}
+# checking and installing 'wavelets'  package
+if(!require("wavelets"))
+  install.packages("wavelets") 
+
+# Loading package to workspace
+library(wavelets)
+```
+
+```{r}
+# Creating a vector 'x'
+x <- c(2, 2, 0, 2, 3, 5, 4, 4)
+
+# Applying discrete wavelet transform (dwt) to 'x'
+# Using the Haar filter and setting the maximum number of levels to 3
+wt <- dwt(x, filter = "haar", n.levels = 3)
+```
+
+W and V vectors are not having same values because in clause we simply use the average, where as here it is sqrt(2)/2.
+
+```{r}
+# Reconstruct the original
+# Perform Inverse Discrete Wavelet Transform
+idwt(wt)
+```
+
+```{r}
+# Obtain transform results as shown in class
+xt = dwt(x, filter = wt.filter(c(0.5, -0.5)), n.levels = 3)
+xt
+```
+
+```{r}
+# Reconstruct using idwt
+idwt(xt)
+```
+
+## Sampling
+
+```{r}
+# setting the seed for random generator as 1
+set.seed(1)
+
+# Create a vector 'age'
+age <- c(25, 25, 25, 30, 33, 33, 35, 40, 45, 46, 52, 70)
+```
+
+### Simple random sampling, without replacement:
+
+```{r}
+# Sample 5 values from 'age' without replacement
+sample(age, 5)
+```
+
+### Simple random sampling, with replacement:
+
+```{r}
+# Sample 5 values from 'age' with replacement
+sample(age, 5, replace = TRUE)
+```
+
+### Stratified sampling 
+
+```{r}
+library(dplyr)
+set.seed(1) #make results the same each run
+summary(algae)
+```
+
+```{r}
+# Take a random sample from the 'algae' dataset
+sample <-algae |> group_by(season) |> sample_frac(0.25)
+summary(sample)
+```
+
+### Cluster sampling
+
+```{r}
+#checking and installing 'sampling'  package
+if(!require("sampling"))
+  install.packages("sampling")
+```
+
+```{r}
+library(sampling)
+age <- c(13, 15, 16, 16, 19, 20, 20, 21, 22, 22, 25, 25, 25, 25, 30, 33, 33, 35, 35, 35, 35, 36, 40, 45, 46, 52, 70)
+s <- kmeans(age, 3) #cluster on age to form 3 clusters
+s$cluster
+```
+
+```{r}
+ageframe <- data.frame(age)
+ageframe$condition <- s$cluster # add cluster label as condition
+cluster(ageframe, clustername = "condition", size = 2) # select 2 clusters out of the three
+```
+
+## Handling Text Datasets
+
+```{r}
+pacman::p_load(tm,
+               SnowballC)#tm uses SnowballC for stemming
+# read corpus
+# Emails.csv,  holding some of Hillary's emails
+data <- read.csv(here::here("data", "Emails.csv"), stringsAsFactors = FALSE)
+
+# Create a Corpus object from the RawText column of the dataset
+docs <- Corpus(VectorSource(data$RawText))
+mode(docs)
+```
+
+### Inspect a document
+
+```{r}
+# Accessing the 20th element in the 'docs' list
+docs[[20]]
+```
+
+### Preprocessing text
+
+```{r}
+docs <- docs |>
+         tm_map(removePunctuation) |>
+         tm_map(content_transformer(tolower)) |> #to lower case
+         tm_map(removeNumbers) |>
+         tm_map(removeWords, stopwords("en")) |> #stopwords, such as a, an.
+         tm_map(stripWhitespace) |>
+         tm_map(stemDocument) #e.g. computer -> comput
+```
+
+```{r}
+content(docs[[20]]) #note: stemming reduces a word to its ‘root’ with the aassumption that the ‘root’ represents the semantics of a word, e.g. computer, computing, computation, computers are about the concept of compute, which may be represented by ‘comput’. but stemming is never perfect.
+```
+
+```{r}
+# Create a Document-Term Matrix (DTM) from 'docs' using TF-IDF weighting
+DTData <- DocumentTermMatrix(docs, control = list(weighting = weightTfIdf))
+```
+
+```{r}
+# Displaying the output
+DTData
+```
+
+```{r}
+# Use the inspect function to display the content of the first two rows and first five columns of DTData
+inspect(DTData[1:2, 1:5])
+```
+
+```{r}
+# Create term-document matrix
+TDData <- TermDocumentMatrix(docs, control = list(weighting = weightTfIdf))
+```
+
+```{r}
+inspect(TDData[1:2, 1:5])
+```
+
+### Explore the dataset
+
+```{r}
+# Find frequently occurring terms in TDData with frequencies between 75 and 1000
+findFreqTerms(TDData, lowfreq = 75, highfreq = 1000)
+```
+
+```{r}
+# Find terms associated with "bill" in TDData with correlation limit of 0.25
+findAssocs(TDData, terms = "bill", corlimit = 0.25)
+```
+
+```{r}
+# Find terms associated with "bill" in DTData with correlation limit of 0.25
+findAssocs(DTData, terms = c("bill"), corlimit = 0.25)
+```
+
+```{r}
+# Find terms associated with "schedul" in DTData with correlation limit of 0.3
+findAssocs(DTData, terms = c("schedul"), corlimit = 0.3)
+```
+
+### Create a word cloud
+
+```{r}
+#checking and installing 'wordcloud'  package
+if(!require("wordcloud"))
+  install.packages("wordcloud")
+
+#checking and installing 'RColorBrewer'  package
+if(!require("RColorBrewer"))
+  install.packages("RColorBrewer")
+
+# Load the package to the workspace
+library(wordcloud)
+```
+
+```{r}
+# Convert TDData to a matrix
+data <- as.matrix(TDData)
+
+# Calculate the sum of each row (word frequency)
+freq <- sort(rowSums(data), decreasing = TRUE)
+
+# Create a data frame with word and frequency columns
+base <- data.frame(word = names(freq), freq = freq)
+```
+
+```{r}
+# Open a PNG file for plotting the word cloud with specified dimensions and background color
+png(file = "wordCloud.png", width = 1000, height = 700, bg = "grey30")
+
+# Generate a word cloud using the 'wordcloud' function
+wordcloud(
+  words = base$word,        # Words to be plotted
+  freq = base$freq,         # Corresponding frequencies
+  col = terrain.colors(length(base$word), alpha = 0.9),  # Color palette
+  random.order = FALSE,     # Display words in order of frequency
+  rot.per = 0.3,            # Probability of word rotation
+  scale = c(1, .1)           # Scaling of word sizes
+)
+
+# Close the PNG device after plotting the word cloud
+dev.off()
+
+```
+
+```{r}
+# Output the word cloud
+wordcloud(base$word, base$freq, col = terrain.colors(length(base$word), alpha = 0.9), 
+random.order = FALSE, rot.per = 0.3, scale = c(1, .1))
+```
+
+```{r}
+#checking and installing 'onehot'  package
+if(!require("onehot"))
+  install.packages("onehot")
+
+# Load the package 
+library(onehot)
+
+# Create a data frame 'd' with language and hours columns
+d <- data.frame(language = c("javascript", "python", "java"), hours = c(10, 3, 5))
+
+# Convert the 'language' column to a categorical variable
+d$language <- as.factor(d$language)
+
+# Use the 'onehot' function to perform one-hot encoding on the 'd' data frame
+encoded <- onehot(d)
+
+# Use the 'predict' function to apply the encoding to the original 'd' data frame
+new_d <- predict(encoded, d)
+
+# Display the resulting data frame with one-hot encoded columns
+new_d
+
+```
+
+```{r}
+#checking and installing 'qdapTools'  package
+if(!require("qdapTools"))
+  install.packages("qdapTools")
+
+# Load the package 
+library(qdapTools)
+
+# Create a data frame 'd' with two columns: 'language' and 'hours'
+d <- data.frame(language = c("javascript, python", "java"), hours = c(3, 5))
+
+# Display the data frame
+d
+```
+
+```{r}
+dlist <- as.list(d)
+new_d <- data.frame(cbind(dlist, mtabulate(strsplit(as.character(dlist$language), ", ")))) 
+
+new_d
+```
